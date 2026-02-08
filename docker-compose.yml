@@ -1,11 +1,10 @@
-version: "3.9"
-
 services:
   availablityio:
     container_name: availablityio
-    image: hossman39/Availablitio:latest
+    image: hossman39/availablityio
     ports:
       - "7874:7874"
     environment:
-      - TMDB_API_KEY=${TMDB_API_KEY}
+      - TMDB_API_KEY=(your_tmdb_api_key_here)
       - PORT=7874
+    restart: unless-stopped
