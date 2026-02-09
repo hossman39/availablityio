@@ -146,8 +146,8 @@ builder.defineStreamHandler(async (args: StreamArgs) => {
     return {
       streams: [
         {
-          name: "Not yet available",
-          title: `Planned digital release: ${dateOnly}`,
+          name: "⏳ Not Available Yet",
+          title: `Digital release: ${dateOnly} — Check back after that date!`,
           externalUrl: tmdbUrl
         }
       ]
