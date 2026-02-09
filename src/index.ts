@@ -45,26 +45,33 @@ const getTmdbIdFromImdb = async (imdbId: string): Promise<number | null> => {
   return data.movie_results?.[0]?.id ?? null;
 };
 
-const getDigitalReleaseDate = async (tmdbId: number): Promise<string | null> => {
+type ReleaseDate = { date: string; isDigital: boolean };
+
+const getDigitalReleaseDate = async (tmdbId: number): Promise<ReleaseDate | null> => {
   const url = `${TMDB_BASE_URL}/movie/${tmdbId}/release_dates?api_key=${TMDB_API_KEY}`;
   const data = await fetchJson<TmdbReleaseDatesResponse>(url);
   const results = data.results ?? [];
   const usResult = results.find((result) => result.iso_3166_1 === "US");
-  const getDigitalDates = (items: typeof results) =>
+
+  const collectDates = (items: typeof results, allowedTypes?: number[]) =>
     items
       .flatMap((result) => result.release_dates ?? [])
-      .filter((release) => (release.type === 4 || release.type === 5) && release.release_date)
+      .filter((release) => release.release_date && (!allowedTypes || allowedTypes.includes(release.type)))
       .map((release) => release.release_date);
 
-  const preferred = getDigitalDates(usResult ? [usResult] : []);
-  const fallback = getDigitalDates(results);
-  const candidates = preferred.length > 0 ? preferred : fallback;
+  const digitalCandidates = collectDates(usResult ? [usResult] : [], [4, 5]).concat(
+    collectDates(results, [4, 5])
+  );
+  const anyCandidates = collectDates(usResult ? [usResult] : []).concat(collectDates(results));
+
+  const isDigital = digitalCandidates.length > 0;
+  const candidates = isDigital ? digitalCandidates : anyCandidates;
   if (candidates.length === 0) {
     return null;
   }
 
   candidates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-  return candidates[0];
+  return { date: candidates[0], isDigital };
 };
 
 builder.defineStreamHandler(async (args: StreamArgs) => {
@@ -104,8 +111,8 @@ builder.defineStreamHandler(async (args: StreamArgs) => {
     }
 
     const tmdbUrl = `https://www.themoviedb.org/movie/${tmdbId}`;
-    const plannedDate = await getDigitalReleaseDate(tmdbId);
-    if (!plannedDate) {
+    const planned = await getDigitalReleaseDate(tmdbId);
+    if (!planned) {
       return {
         streams: [
           {
@@ -117,14 +124,15 @@ builder.defineStreamHandler(async (args: StreamArgs) => {
       };
     }
 
-    const dateOnly = plannedDate.split("T")[0] || plannedDate;
-    const releaseTime = new Date(plannedDate).getTime();
+    const dateOnly = planned.date.split("T")[0] || planned.date;
+    const releaseTime = new Date(planned.date).getTime();
+    const label = planned.isDigital ? "Digital release" : "Release date";
     if (Number.isNaN(releaseTime)) {
       return {
         streams: [
           {
             name: "Not yet available",
-            title: `Planned digital release: ${dateOnly}`,
+            title: `${label}: ${dateOnly}`,
             externalUrl: tmdbUrl
           }
         ]
@@ -147,7 +155,7 @@ builder.defineStreamHandler(async (args: StreamArgs) => {
       streams: [
         {
           name: "⏳ Not Available Yet",
-          title: `Digital release: ${dateOnly} — Check back after that date!`,
+          title: `${label}: ${dateOnly} — Check back after that date!`,
           externalUrl: tmdbUrl
         }
       ]
